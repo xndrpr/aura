@@ -114,7 +114,7 @@ func encodeOpus(src: URL, dst: URL, kbps: Int) throws {
                                               mBytesPerPacket: 0, mFramesPerPacket: 960, mBytesPerFrame: 0,
                                               mChannelsPerFrame: 1, mBitsPerChannel: 0, mReserved: 0)
     var conv: AudioConverterRef?
-    guard AudioConverterNew(&inDesc, &outDesc, &conv) == noErr, let c = conv else { throw RecError(msg: "Opus encoder недоступен") }
+    guard AudioConverterNew(&inDesc, &outDesc, &conv) == noErr, let c = conv else { throw RecError(msg: "Opus encoder unavailable") }
     defer { AudioConverterDispose(c) }
     var br = UInt32(kbps * 1000)
     AudioConverterSetProperty(c, kAudioConverterEncodeBitRate, 4, &br)
@@ -209,13 +209,13 @@ final class Recorder {
         desc.muteBehavior = .unmuted
         desc.isPrivate = true
         guard AudioHardwareCreateProcessTap(desc, &tapID) == noErr else {
-            throw RecError(msg: "Нет доступа к системному звуку. Разреши в Настройки → Конфиденциальность → Запись системного звука")
+            throw RecError(msg: "No access to system audio. Allow it in System Settings → Privacy & Security → System Audio Recording")
         }
         var a = AudioObjectPropertyAddress(mSelector: kAudioTapPropertyFormat, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
         var asbd = AudioStreamBasicDescription()
         var sz = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
         AudioObjectGetPropertyData(tapID, &a, 0, nil, &sz, &asbd)
-        guard let fmt = AVAudioFormat(streamDescription: &asbd) else { throw RecError(msg: "Неподдерживаемый формат системного звука") }
+        guard let fmt = AVAudioFormat(streamDescription: &asbd) else { throw RecError(msg: "Unsupported system audio format") }
         tapFormat = fmt
         sysConv = AVAudioConverter(from: fmt, to: target)
 
@@ -235,7 +235,7 @@ final class Recorder {
             dict[kAudioAggregateDeviceSubDeviceListKey] = [[kAudioSubDeviceUIDKey: uid]]
         }
         guard AudioHardwareCreateAggregateDevice(dict as CFDictionary, &aggID) == noErr else {
-            throw RecError(msg: "Не удалось создать аудио-устройство для записи")
+            throw RecError(msg: "Could not create the capture audio device")
         }
         let st = AudioDeviceCreateIOProcIDWithBlock(&procID, aggID, ioq) { [weak self] _, inData, _, _, _ in
             guard let self, let fmt = self.tapFormat, let conv = self.sysConv,
@@ -243,7 +243,7 @@ final class Recorder {
             let samples = self.convert(buf, conv)
             self.q.async { if !self.paused { self.sys.append(contentsOf: samples) } }
         }
-        guard st == noErr, AudioDeviceStart(aggID, procID) == noErr else { throw RecError(msg: "Не удалось запустить захват системного звука") }
+        guard st == noErr, AudioDeviceStart(aggID, procID) == noErr else { throw RecError(msg: "Could not start system audio capture") }
     }
 
     // Microphone
@@ -307,11 +307,11 @@ func deviceName(_ selector: AudioObjectPropertySelector) -> String {
     var dev = AudioObjectID(0)
     var sz = UInt32(MemoryLayout<AudioObjectID>.size)
     var a = AudioObjectPropertyAddress(mSelector: selector, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
-    guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &a, 0, nil, &sz, &dev) == noErr, dev != 0 else { return "не найдено" }
+    guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &a, 0, nil, &sz, &dev) == noErr, dev != 0 else { return "not found" }
     var name: Unmanaged<CFString>?
     sz = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
     a.mSelector = kAudioObjectPropertyName
-    guard AudioObjectGetPropertyData(dev, &a, 0, nil, &sz, &name) == noErr, let n = name else { return "не найдено" }
+    guard AudioObjectGetPropertyData(dev, &a, 0, nil, &sz, &name) == noErr, let n = name else { return "not found" }
     return n.takeRetainedValue() as String
 }
 
@@ -446,7 +446,7 @@ final class App: NSObject, NSApplicationDelegate {
         } catch {
             recorder.stop(); notice = error.localizedDescription; render(); return
         }
-        if !recorder.micActive { notice = "Микрофон недоступен — пишется только системный звук" }
+        if !recorder.micActive { notice = "Microphone unavailable — recording system audio only" }
         rawURL = url; accumulated = 0; runningSince = Date(); mode = .recording
         savedURL = nil
         tick = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in self?.updateTimer() }
@@ -563,7 +563,7 @@ final class App: NSObject, NSApplicationDelegate {
         }
 
         // header
-        let labels: [Mode: String] = [.idle: "Готов", .recording: "Запись", .paused: "Пауза", .stopped: "Завершено"]
+        let labels: [Mode: String] = [.idle: "Ready", .recording: "Recording", .paused: "Paused", .stopped: "Finished"]
         let dotColor: [Mode: NSColor] = [.idle: NSColor(hex: 0x555555), .recording: NSColor(hex: 0xff4d4d), .paused: fgMain, .stopped: NSColor(hex: 0x555555)]
         let dot = NSView(); dot.wantsLayer = true; dot.layer?.cornerRadius = 3; dot.layer?.backgroundColor = dotColor[mode]!.cgColor
         dot.translatesAutoresizingMaskIntoConstraints = false
@@ -588,8 +588,8 @@ final class App: NSObject, NSApplicationDelegate {
                 return r
             }
             let dev = NSStackView(views: [
-                row("Микрофон", deviceName(kAudioHardwarePropertyDefaultInputDevice)),
-                row("Системный", deviceName(kAudioHardwarePropertyDefaultSystemOutputDevice)),
+                row("Mic", deviceName(kAudioHardwarePropertyDefaultInputDevice)),
+                row("System", deviceName(kAudioHardwarePropertyDefaultSystemOutputDevice)),
             ])
             dev.orientation = .vertical; dev.alignment = .leading; dev.spacing = 4
             stack.addArrangedSubview(padded(dev, top: 0, h: 14, bottom: 4))
@@ -614,11 +614,11 @@ final class App: NSObject, NSApplicationDelegate {
 
         switch mode {
         case .idle:
-            full(Btn("  Начать запись     ⌘⇧R", symbol: "circle.fill", fg: .black, bg: fgMain, border: fgMain) { [self] in start() })
+            full(Btn("  Start recording     ⌘⇧R", symbol: "circle.fill", fg: .black, bg: fgMain, border: fgMain) { [self] in start() })
         case .recording, .paused:
-            let pause = Btn(mode == .recording ? " Пауза" : " Дальше", symbol: mode == .recording ? "pause.fill" : "play.fill",
+            let pause = Btn(mode == .recording ? " Pause" : " Resume", symbol: mode == .recording ? "pause.fill" : "play.fill",
                             fg: fgMain, bg: .black, border: lineCol) { [self] in togglePause() }
-            let stopB = Btn(" Закончить", symbol: "stop.fill", fg: .black, bg: fgMain, border: fgMain) { [self] in stop() }
+            let stopB = Btn(" Stop", symbol: "stop.fill", fg: .black, bg: fgMain, border: fgMain) { [self] in stop() }
             let row = NSStackView(views: [pause, stopB]); row.distribution = .fillEqually; row.spacing = 6
             full(row)
         case .stopped:
@@ -637,14 +637,14 @@ final class App: NSObject, NSApplicationDelegate {
             let top = NSStackView(views: [label(meta, size: 11, color: fgDim, mono: true), sp, seg]); top.distribution = .fill; top.alignment = .centerY
             full(top)
             if exporting {
-                full(Btn("Кодирую…", fg: fgMuted, bg: NSColor(hex: 0x111111), border: NSColor(hex: 0x262626)) {})
+                full(Btn("Encoding…", fg: fgMuted, bg: NSColor(hex: 0x111111), border: NSColor(hex: 0x262626)) {})
             } else if savedURL == nil {
-                full(Btn(" Экспорт в .opus", symbol: "arrow.down.to.line", fg: .black, bg: fgMain, border: fgMain) { [self] in export() })
+                full(Btn(" Export as .opus", symbol: "arrow.down.to.line", fg: .black, bg: fgMain, border: fgMain) { [self] in export() })
             } else {
-                full(Btn(" Сохранено · новая запись", symbol: "checkmark", fg: fgMain, bg: .black, border: lineCol) { [self] in reset() })
+                full(Btn(" Saved · New recording", symbol: "checkmark", fg: fgMain, bg: .black, border: lineCol) { [self] in reset() })
             }
             if savedURL == nil && !exporting {
-                full(Btn("Удалить запись", fg: fgMuted, bg: nil, size: 11, height: 24) { [self] in reset() })
+                full(Btn("Discard recording", fg: fgMuted, bg: nil, size: 11, height: 24) { [self] in reset() })
             }
         }
         stack.addArrangedSubview(padded(controls, top: 8, h: 10, bottom: 10))
@@ -653,8 +653,8 @@ final class App: NSObject, NSApplicationDelegate {
         let sep = NSBox(); sep.boxType = .separator
         sep.translatesAutoresizingMaskIntoConstraints = false; stack.addArrangedSubview(sep)
         sep.widthAnchor.constraint(equalToConstant: 300).isActive = true
-        let folder = Btn("Открыть папку ↗", fg: fgDim, bg: nil, size: 11, height: 30) { NSWorkspace.shared.open(recDir) }
-        let quit = Btn("Выйти ⌘Q", fg: fgDim, bg: nil, size: 11, height: 30) { NSApp.terminate(nil) }
+        let folder = Btn("Open folder ↗", fg: fgDim, bg: nil, size: 11, height: 30) { NSWorkspace.shared.open(recDir) }
+        let quit = Btn("Quit ⌘Q", fg: fgDim, bg: nil, size: 11, height: 30) { NSApp.terminate(nil) }
         quit.keyEquivalent = "q"; quit.keyEquivalentModifierMask = .command
         let fsp = NSView(); fsp.setContentHuggingPriority(.defaultLow, for: .horizontal)
         let foot = NSStackView(views: [folder, fsp, quit]); foot.distribution = .fill

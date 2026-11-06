@@ -10,7 +10,7 @@
     <key>CFBundleVersion</key><string>1</string>
     <key>LSMinimumSystemVersion</key><string>14.4</string>
     <key>LSUIElement</key><true/>
-    <key>NSMicrophoneUsageDescription</key><string>Aura записывает ваш голос во время созвона.</string>
-    <key>NSAudioCaptureUsageDescription</key><string>Aura записывает системный звук (собеседников) во время созвона.</string>
+    <key>NSMicrophoneUsageDescription</key><string>Aura records your voice during calls.</string>
+    <key>NSAudioCaptureUsageDescription</key><string>Aura records system audio (the other participants) during calls.</string>
 </dict>
 </plist>
